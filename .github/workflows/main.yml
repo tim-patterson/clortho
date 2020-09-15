@@ -1,0 +1,83 @@
+# Only run the push checks on master so we don't use all our minutes!
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+name: Test
+
+jobs:
+  test_and_clippy:
+    name: Test Suite
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Load cache
+        # See https://github.com/actions/cache/issues/403
+        if: runner.os != 'macOS'
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Install LLVM
+        if: runner.os == 'Windows'
+        run: choco install llvm -y
+
+      - name: Run tests
+        uses: actions-rs/cargo@v1
+        env:
+          RUST_BACKTRACE: 1
+        with:
+          command: test
+          args: --all
+
+      - name: Install clippy
+        if: runner.os == 'Linux'
+        run: rustup component add clippy
+
+      - name: Run clippy
+        if: runner.os == 'Linux'
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all -- -D warnings
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - run: rustup component add rustfmt
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+  licencecheck:
+    name: Licence Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: EmbarkStudios/cargo-deny-action@v1
