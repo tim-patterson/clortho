@@ -36,8 +36,9 @@ The data section consists of all the records sorted and laid out as follows:
 r0:
 key_length: varint,
 value_length: varint,
-key,
-value
+key: bytes,
+value: bytes,
+shard_hash: u16,
 r1:
 key_length: varint,
 ...

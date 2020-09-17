@@ -11,7 +11,7 @@ pub struct TupleRecord {
     // The frequency for this delta(ie add/remove)
     pub frequency: i64,
     // The hash used to bucket data into n partitions if needed
-    pub partition_hash: u16,
+    pub shard_hash: u16,
 }
 
 impl KVWritable for TupleRecord {
@@ -24,7 +24,7 @@ impl KVWritable for TupleRecord {
         write_varint_signed(self.frequency, buffer);
     }
 
-    fn partition_hash(&self) -> u16 {
-        self.partition_hash
+    fn shard_hash(&self) -> u16 {
+        self.shard_hash
     }
 }
