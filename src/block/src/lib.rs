@@ -1,4 +1,5 @@
 use crate::varint::write_varint_unsigned;
+use std::cmp::min;
 use std::io::{Seek, SeekFrom, Write};
 
 mod records;
@@ -25,6 +26,14 @@ pub struct BlockBuilder {
     data_pointers: Vec<(u32, u32, u32)>,
 }
 
+// Number of pointers/children in each b+tree page.
+// Should be a power of 2 to get optimal balanced binary search
+const SEARCH_TREE_SIZE: usize = 64;
+// At what interval the search tree hooks into the data section.
+// Our seeks have to linear scan through up to this many records
+// and things like prefix compression would be reset at these intervals.
+const LOWER_LEAF_SIZE: usize = 16;
+
 impl BlockBuilder {
     /// Writes a record into the buffer
     pub fn append<R: KVWritable>(&mut self, record: &R) {
@@ -47,8 +56,8 @@ impl BlockBuilder {
     /// Flush all the data out to a local file.
     pub fn flush<W: Write + Seek>(&mut self, writer: &mut W) -> Result<(), std::io::Error> {
         self.write_header(writer)?;
-        let _page_datas = BlockBuilder::write_data(&self.buffer, &mut self.data_pointers, writer)?;
-
+        let pages = BlockBuilder::write_data(&self.buffer, &mut self.data_pointers, writer)?;
+        BlockBuilder::write_search_tree(&pages, writer)?;
         Ok(())
     }
 
@@ -82,9 +91,9 @@ v1
             a.cmp(b)
         });
 
-        let mut page_datas = Vec::with_capacity(pointers.len() / 16 + 1);
+        let mut page_datas = Vec::with_capacity(pointers.len() / LOWER_LEAF_SIZE + 1);
 
-        for chunk in pointers.chunks(16) {
+        for chunk in pointers.chunks(LOWER_LEAF_SIZE) {
             let (min_start, min_key_end, _) = chunk.first().unwrap();
             let (max_start, max_key_end, _) = chunk.last().unwrap();
             let min_key = &buffer[(*min_start as usize)..(*min_key_end as usize)];
@@ -93,7 +102,7 @@ v1
             let pointer = -(writer.seek(SeekFrom::Current(0)).unwrap() as i32);
 
             for data_pointer in chunk {
-                BlockBuilder::write_record(buffer, &mut vec![], data_pointer, writer)?;
+                BlockBuilder::write_record(buffer, data_pointer, writer)?;
             }
 
             page_datas.push(PageData {
@@ -102,29 +111,86 @@ v1
                 pointer,
             });
         }
+        writer.write_all(b"\0\0\0\0")?;
 
         Ok(page_datas)
     }
 
     fn write_record<W: Write + Seek>(
         buffer: &[u8],
-        varint_buf: &mut Vec<u8>,
         data_pointer: &(u32, u32, u32),
         writer: &mut W,
     ) -> Result<(), std::io::Error> {
         // Key length
-        varint_buf.clear();
-        write_varint_unsigned(data_pointer.1 - data_pointer.0, varint_buf);
-        writer.write_all(varint_buf)?;
+        write_varint_unsigned(data_pointer.1 - data_pointer.0, writer)?;
 
-        // Value length
-        varint_buf.clear();
-        // Minus 2 for the shard_prefix
-        write_varint_unsigned(data_pointer.2 - data_pointer.1 - 2, varint_buf);
-        writer.write_all(varint_buf)?;
+        // Value length, minus 2 for the shard_prefix
+        write_varint_unsigned(data_pointer.2 - data_pointer.1 - 2, writer)?;
 
         // Key/Value/Shard_prefix
         writer.write_all(&buffer[(data_pointer.0 as usize)..(data_pointer.2 as usize)])?;
         Ok(())
     }
+
+    /// Writes the search tree portion of the block, returns the "pointer" into the root node of the
+    /// tree (or directly into the data if there's <=16 records in the file)
+    fn write_search_tree<W: Write + Seek>(
+        children: &[PageData],
+        writer: &mut W,
+    ) -> Result<i32, std::io::Error> {
+        if let [child] = children {
+            return Ok(child.pointer);
+        } else if children.is_empty() {
+            panic!("We can't write a search tree for 0 items...")
+        }
+
+        let mut child_pages = Vec::with_capacity(children.len() / SEARCH_TREE_SIZE + 1);
+
+        for chunk in children.chunks(SEARCH_TREE_SIZE) {
+            // Write pivots
+            let pivot_pointers = chunk
+                .windows(2)
+                .map::<Result<_, std::io::Error>, _>(|left_right| {
+                    let left_val = left_right[0].max;
+                    let right_val = left_right[1].min;
+                    let pivot = &right_val[..(common_prefix_len(left_val, right_val))];
+                    let pointer = writer.seek(SeekFrom::Current(0)).unwrap() as i32;
+                    write_varint_unsigned(pivot.len() as u32, writer)?;
+                    writer.write_all(pivot)?;
+                    Ok(pointer)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let page_pointer = writer.seek(SeekFrom::Current(0)).unwrap() as i32;
+            // Write child count
+            writer.write_all(&[chunk.len() as u8])?;
+            // Write pivot pointers
+            for pointer in pivot_pointers {
+                writer.write_all(pointer.to_be_bytes().as_ref())?;
+            }
+            // Write child pointers
+            for child in chunk {
+                writer.write_all(child.pointer.to_be_bytes().as_ref())?;
+            }
+
+            child_pages.push(PageData {
+                min: chunk.first().unwrap().min,
+                max: chunk.last().unwrap().max,
+                pointer: page_pointer,
+            })
+        }
+
+        // Recurse...
+        BlockBuilder::write_search_tree(&child_pages, writer)
+    }
+}
+
+/// Returns the length in bytes of the common prefix of two byte arrays
+fn common_prefix_len(a: &[u8], b: &[u8]) -> usize {
+    for (idx, (a, b)) in a.iter().zip(b).enumerate() {
+        if *a != *b {
+            return idx - 1;
+        }
+    }
+    min(a.len(), b.len())
 }

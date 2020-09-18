@@ -1,19 +1,23 @@
 use std::convert::TryInto;
+use std::io::Write;
 
 /// Writes an unsigned int into a buffer with lexicographical sort attempting
 /// to not use too much space
-pub(crate) fn write_varint_unsigned(i: u32, buffer: &mut Vec<u8>) {
+pub(crate) fn write_varint_unsigned<W: Write>(
+    i: u32,
+    buffer: &mut W,
+) -> Result<(), std::io::Error> {
     // To maintain the lexicographical sorting we'll use the first byte to encode the size of
     // the integer, with the integer itself encoded as bigendian we'll encode very small values
     // into the discriminator, for desc, we'll just flip all the bits
     if i < 253 {
-        buffer.push(i as u8);
+        buffer.write_all(&[i as u8])
     } else if i <= u16::MAX as u32 {
-        buffer.push(253);
-        buffer.extend_from_slice((i as u16).to_be_bytes().as_ref());
+        buffer.write_all(&[253])?;
+        buffer.write_all((i as u16).to_be_bytes().as_ref())
     } else {
-        buffer.push(254);
-        buffer.extend_from_slice(i.to_be_bytes().as_ref());
+        buffer.write_all(&[254])?;
+        buffer.write_all(i.to_be_bytes().as_ref())
     }
 }
 
@@ -143,7 +147,7 @@ mod tests {
         // Encode into separate buffers
         for i in &numbers {
             let mut buf = vec![];
-            write_varint_unsigned(*i, &mut buf);
+            write_varint_unsigned(*i, &mut buf).unwrap();
             asc_byte_arrays.push(buf);
         }
 

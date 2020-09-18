@@ -44,6 +44,11 @@ key_length: varint,
 ...
 ```
 
+However to stop us walking off the end we'll place `[0,0,0,0]`
+This could be interpreted as key_length = 0, value_length = 0, shard_hash = 0.
+One 0/null should be enough in theory but for the cost of 3 extra bytes it might
+allow simpler code.
+
 ### B+Tree Section
 This section contains a bunch of btree pages.
 The lower pages are first followed by the higher pages.
@@ -52,9 +57,9 @@ Each page is laid out as follows
 pivots: (x's pivot_count)
   key_length: varint
   key_bytes: bytes[key_length]
-pivot_count: u8
-pivot_pointers: [u32; pivot_count]
-child_pointers: [i32; pivot_count + 1]
+child_count: u8
+pivot_pointers: [u32; child_count - 1]
+child_pointers: [i32; child_count]
 ```
 
 All pointers are absolute.
