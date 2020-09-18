@@ -1,6 +1,7 @@
 use crate::varint::write_varint_unsigned;
 use std::cmp::min;
 use std::io::{Seek, SeekFrom, Write};
+use std::time::SystemTime;
 
 mod records;
 mod varint;
@@ -55,14 +56,16 @@ impl BlockBuilder {
 
     /// Flush all the data out to a local file.
     pub fn flush<W: Write + Seek>(&mut self, writer: &mut W) -> Result<(), std::io::Error> {
-        self.write_header(writer)?;
+        BlockBuilder::write_header(writer)?;
         let pages = BlockBuilder::write_data(&self.buffer, &mut self.data_pointers, writer)?;
-        BlockBuilder::write_search_tree(&pages, writer)?;
+        let tree_pointer = BlockBuilder::write_search_tree(&pages, writer)?;
+        let timestamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64;
+        BlockBuilder::write_footer(timestamp, tree_pointer, writer)?;
         Ok(())
     }
 
     /// Writes the block header
-    fn write_header<W: Write + Seek>(&mut self, writer: &mut W) -> Result<(), std::io::Error> {
+    fn write_header<W: Write + Seek>(writer: &mut W) -> Result<(), std::io::Error> {
         writer.write_all(
             b"cloud storage
 data
@@ -182,6 +185,13 @@ v1
 
         // Recurse...
         BlockBuilder::write_search_tree(&child_pages, writer)
+    }
+
+    /// Writes the block header
+    fn write_footer<W: Write + Seek>(timestamp: u64, tree_pointer: i32, writer: &mut W) -> Result<(), std::io::Error> {
+        writer.write_all(timestamp.to_be_bytes().as_ref())?;
+        writer.write_all(tree_pointer.to_be_bytes().as_ref())?;
+        writer.write_all(1_u16.to_be_bytes().as_ref())
     }
 }
 
