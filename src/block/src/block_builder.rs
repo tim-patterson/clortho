@@ -60,7 +60,7 @@ impl BlockBuilder {
     /// Writes the block header
     fn write_header<W: Write + Seek>(writer: &mut W) -> Result<(), std::io::Error> {
         writer.write_all(
-            b"cloud storage
+            b"clortho
 data
 v1
 

@@ -8,7 +8,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cloud-storage"
+name = "clortho"
 version = "0.1.0"
 
 [[package]]

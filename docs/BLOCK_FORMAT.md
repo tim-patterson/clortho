@@ -16,7 +16,7 @@ Its just here as a place to put some generic magic bytes so we can check
 the file format easily using head.
 It consists of the following 10 lines (head's default).
 ```
-cloud storage
+clortho
 data
 v1
 

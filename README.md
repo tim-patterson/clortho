@@ -1,40 +1,34 @@
-# Cloud Storage
-![Build Status](https://github.com/incresql/cloud-storage/workflows/Test/badge.svg)
+# Clortho
+![Build Status](https://github.com/incresql/clortho/workflows/Test/badge.svg)
 
 Experiments with cloud native KV storage backend targeting streaming type workloads
 
 ## Goal
-To create a true cloud native key value store to support the creation of high performance
-cloud native distributed databases that support features that users expect from modern systems.
+While I do have big lofty goals the reality is this is a big project that will most likely
+never get anywhere close to working.
+The eventual goal would be to create a rocksdb type kv store with the following differences:
 
-The databases I have in mind would typically contain these (internal) features:
-1. Fast *point in time* indexed lookups/range scans(ie mvcc support).
-2. Some form of a log to support incremental updates/streams etc.
-3. Fast KV style get/puts for storing state for streaming operators.
-4. Cloud native, ie "stateless", distributed and easily scalable(if not autoscaling)
-5. A good backup/restore story.
-6. Utilises (cheap) cloud storage.
-7. Leader election etc for sharded processing/book keeping tasks
-8. Soft Realtime writes(ie sub second rather than sub ms)
+* Timestamp aware allowing point in time queries - while this can be implemented on top of
+any kv store by pushing this down to the storage layer we can be a bit smarter with compactions,
+truncating history efficiently, bucketing history for performance where we're only querying recent
+history etc.
+* Simple sharding leaning on cloud services for atomic commits etc instead of WAL's and replication
+* Giving up low latency writes for higher latency cloud commits, each write batch would
+consist of whole sst's.
+* Potentially different compaction etc for log type data.
+* Distributed (with a co-located higher level processing)
 
-Commonly the path taken is to have the storage layer be a dumb single node system
-with a higher layer dealing with everything distributed.
-These systems tend to have alot of complexity to deal with replication, rebalancing,
-distributed transactions etc which makes them operationally complex.
-
-This project's point of difference is to:
-* Lean on the cloud providers to do all the hard work around replication backups etc
-by using cloud storage services as a core component.
-* Not be shy about pushing concepts down into the storage layer/file formats if it makes sense
-rather than trying to stick to a pure kv store.
+This project will attempt to build up the components needed bit by bit hopefully allowing
+each bit to be generic enough to be able to stand on its own.
 
 ## How(the plan)
 The current idea here is to very roughly follow the basic rocksdb structure but with
-s3 being the primary storage with files cached locally with metadata in dynamodb.
+s3 being the "master" storage with files cached locally with metadata in dynamodb.
 Because we can lean on dynamo for our atomic state updates we no longer have a need for
-wal files and the complexity that comes with it, not to mention our atomic updates effectively
-become unlimited in size and with very little coordination we can be atomic with many writers
-(ie a big distributed query) 
+wal files and the complexity that comes with it.
+
+To support clustering we'll use dynamo as distributed lock/leader election and a reasonably high
+frequency gossip protocol across the cluster to share state.
 
 
 ## Developing
