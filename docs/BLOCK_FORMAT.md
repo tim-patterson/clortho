@@ -38,16 +38,16 @@ key_length: varint,
 value_length: varint,
 key: bytes,
 value: bytes,
-shard_hash: u16,
+timestamp: u64,
 r1:
 key_length: varint,
 ...
 ```
 
-However to stop us walking off the end we'll place `[0,0,0,0]`
-This could be interpreted as key_length = 0, value_length = 0, shard_hash = 0.
-One 0/null should be enough in theory but for the cost of 3 extra bytes it might
-allow simpler code.
+However to stop us walking off the end we'll place `[0,0,0,0,0,0,0,0,0,0,0]`
+This could be interpreted as key_length = 0, value_length = 0, timestamp = 0.
+This allows a reader to read the whole record without the early break if
+that simpifies any implementations
 
 ### B+Tree Section
 This section contains a bunch of btree pages.
@@ -100,7 +100,7 @@ Its main purpose is to provide the initial pointer into our root b+tree page.
 But we also use it to store some machine-readable metadata.
 Its layout is
 ```
-timestamp: u64
+write_timestamp: u64
 search_pointer: i32
 version: u16(always 1)
 ```
