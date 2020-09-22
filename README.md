@@ -1,5 +1,5 @@
 # Clortho
-![Build Status](https://github.com/incresql/clortho/workflows/Test/badge.svg)
+![Build Status](https://github.com/tim-patterson/clortho/workflows/Test/badge.svg)
 
 Experiments with cloud native KV storage backend targeting streaming type workloads
 
