@@ -1,8 +1,9 @@
 use std::io::{Seek, Write};
 use std::ops::Deref;
+use utils::streaming_iter::StreamingIter;
 use utils::Timestamp;
 
-//mod block_builder;
+//mod sst_writer;
 pub mod memory_block_store;
 pub mod records;
 
@@ -23,9 +24,9 @@ pub trait MergeFunction {
     /// Return type is keep, ie return false to throw skip this value if it's been merged to nothing.
     /// When dealing with multi-versioned data(ie timestamps) this will be called with data from
     /// newest to oldest.
-    fn merge<'a, 'b, I: Iterator<Item = &'a [u8]>, W: Write>(
-        iter: &'a mut I,
-        merged: &'b mut W,
+    fn merge<I: StreamingIter<I = [u8], E = std::io::Error>, W: Write>(
+        iter: &mut I,
+        merged: &mut W,
     ) -> std::io::Result<bool>;
 
     /// Used to signal that we want to treat the data as absolutes not deltas, while we could do

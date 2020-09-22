@@ -1,12 +1,12 @@
-use crate::KVWritable;
+use crate::{KVWritable, MergeFunction};
 use std::io::{Write, Seek, SeekFrom};
 use std::time::SystemTime;
 use crate::varint::write_varint_unsigned;
 use std::cmp::min;
 
-/// Component used to write blocks
+/// Writer to write out sst files.
 #[derive(Default)]
-pub struct BlockBuilder {
+pub struct SstWriter {
     buffer: Vec<u8>,
     // Key start, Key end, Value end
     data_pointers: Vec<(u32, u32, u32)>,
@@ -28,7 +28,7 @@ const SEARCH_TREE_SIZE: usize = 64;
 // and things like prefix compression would be reset at these intervals.
 const LOWER_LEAF_SIZE: usize = 16;
 
-impl BlockBuilder {
+impl SstWriter {
     /// Writes a record into the buffer
     pub fn append<R: KVWritable>(&mut self, record: &R) {
         let start_pointer = self.buffer.len();
@@ -49,11 +49,12 @@ impl BlockBuilder {
 
     /// Flush all the data out to a local file.
     pub fn flush<W: Write + Seek>(&mut self, writer: &mut W) -> Result<(), std::io::Error> {
-        BlockBuilder::write_header(writer)?;
-        let pages = BlockBuilder::write_data(&self.buffer, &mut self.data_pointers, writer)?;
-        let tree_pointer = BlockBuilder::write_search_tree(&pages, writer)?;
+        SstWriter::write_header(writer)?;
+        let pages = SstWriter::write_data(&self.buffer, &mut self.data_pointers, writer)?;
+        let tree_pointer = SstWriter::write_search_tree(&pages, writer)?;
         let timestamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64;
-        BlockBuilder::write_footer(timestamp, tree_pointer, writer)?;
+        SstWriter::write_footer(timestamp, tree_pointer, writer)?;
+
         Ok(())
     }
 
@@ -101,7 +102,7 @@ v1
             let pointer = -(writer.seek(SeekFrom::Current(0)).unwrap() as i32);
 
             for data_pointer in chunk {
-                BlockBuilder::write_record(buffer, data_pointer, writer)?;
+                SstWriter::write_record(buffer, data_pointer, writer)?;
             }
 
             page_datas.push(PageData {
@@ -180,7 +181,7 @@ v1
         }
 
         // Recurse...
-        BlockBuilder::write_search_tree(&child_pages, writer)
+        SstWriter::write_search_tree(&child_pages, writer)
     }
 
     /// Writes the block header

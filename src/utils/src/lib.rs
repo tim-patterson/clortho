@@ -1,5 +1,6 @@
 use std::time::SystemTime;
 
+pub mod streaming_iter;
 pub mod varint;
 
 /// A Timestamp struct, just a wrapper around unix epoch.

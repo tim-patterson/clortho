@@ -1,5 +1,6 @@
 use crate::{KVWritable, MergeFunction};
 use std::io::Write;
+use utils::streaming_iter::StreamingIter;
 use utils::varint::{read_varint_signed, write_varint_signed};
 use utils::Timestamp;
 
@@ -41,13 +42,13 @@ impl KVWritable for CounterRecord<'_> {
 }
 
 impl MergeFunction for CounterRecord<'_> {
-    fn merge<'a, 'b, I: Iterator<Item = &'a [u8]>, W: Write>(
-        iter: &'a mut I,
-        merged: &'b mut W,
+    fn merge<I: StreamingIter<I = [u8], E = std::io::Error>, W: Write>(
+        iter: &mut I,
+        merged: &mut W,
     ) -> std::io::Result<bool> {
         let mut freq = 0_i64;
         let mut tmp = 0_i64;
-        for f in iter {
+        while let Some(f) = iter.next()? {
             read_varint_signed(&mut tmp, f);
             freq += tmp;
         }
@@ -63,6 +64,7 @@ impl MergeFunction for CounterRecord<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use utils::streaming_iter::wrap;
     use utils::varint::VARINT_SIGNED_ZERO_ENC;
 
     #[test]
@@ -87,7 +89,7 @@ mod tests {
             [VARINT_SIGNED_ZERO_ENC + 4].as_ref(),
             [VARINT_SIGNED_ZERO_ENC + 2].as_ref(),
         ];
-        let mut iter = values.into_iter();
+        let mut iter = wrap(values.into_iter());
         let keep = CounterRecord::merge(&mut iter, &mut output).unwrap();
 
         assert!(keep);
@@ -101,7 +103,7 @@ mod tests {
             [VARINT_SIGNED_ZERO_ENC + 4].as_ref(),
             [VARINT_SIGNED_ZERO_ENC - 4].as_ref(),
         ];
-        let mut iter = values.into_iter();
+        let mut iter = wrap(values.into_iter());
         let keep = CounterRecord::merge(&mut iter, &mut output).unwrap();
 
         assert_eq!(false, keep);

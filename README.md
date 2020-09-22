@@ -15,8 +15,10 @@ history etc.
 * Simple sharding leaning on cloud services for atomic commits etc instead of WAL's and replication
 * Giving up low latency writes for higher latency cloud commits, each write batch would
 consist of whole sst's.
+* Support for file level custom stats and hooks for filtering, ie column min/max/blooms etc to allow for application
+aware file pruning.
 * Potentially different compaction etc for log type data.
-* Distributed (with a co-located higher level processing)
+* Distributed (with a co-located higher level processing).
 
 This project will attempt to build up the components needed bit by bit hopefully allowing
 each bit to be generic enough to be able to stand on its own.
