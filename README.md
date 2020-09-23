@@ -33,7 +33,9 @@ different embedded kv stores.
 The goal for the end of this phase is just to have a file format that we can read and write
 - [x] FileStore Abstraction and InMem Impl
 - [x] SST Writer(v1)
-- [ ] SST Reader(v1)
+- [x] SST Reader(v1)
+- [ ] SST RecordWriter(buffered)
+- [ ] SST RecordReader
 - [ ] Local FileStore Impl
 
 #### Phase 2 - LSM

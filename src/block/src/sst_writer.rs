@@ -9,7 +9,7 @@ use utils::varint::write_varint_unsigned;
 /// Writer for a single SST file.
 /// This writer is rather low level and expects the data to be written to it in sorted order
 /// with no duplicates
-/// See https://github.com/tim-patterson/clortho/blob/master/docs/BLOCK_FORMAT.md
+/// See https://github.com/tim-patterson/clortho/blob/master/docs/FILE_FORMAT.md
 /// for the file format produced by this writer.
 pub struct SstWriter<W: Write + Seek> {
     writer: W,
@@ -64,23 +64,19 @@ impl<W: Write + Seek> SstWriter<W> {
 
     /// Pushes a record into the low-level storage, at this point we expect the timestamp to be
     /// appended onto the record_key as u64 BE.
-    pub fn push_record(
-        &mut self,
-        record_key_ts: &[u8],
-        record_value: &[u8],
-    ) -> std::io::Result<i32> {
+    pub fn push_record(&mut self, record_key: &[u8], record_value: &[u8]) -> std::io::Result<i32> {
         let record_pointer = -(self.size() as i32);
-        write_varint_unsigned(record_key_ts.len() as u32 - 8, &mut self.writer)?;
-        self.writer.write_all(record_key_ts)?;
+        write_varint_unsigned(record_key.len() as u32, &mut self.writer)?;
         write_varint_unsigned(record_value.len() as u32, &mut self.writer)?;
+        self.writer.write_all(record_key)?;
         self.writer.write_all(record_value)?;
         // Update page data min(if start of page), max
         if self.page_offset == 0 {
-            self.current_page.min = record_key_ts.to_vec();
+            self.current_page.min = record_key.to_vec();
             self.current_page.pointer = record_pointer;
         }
         self.current_page.max.clear();
-        self.current_page.max.extend_from_slice(record_key_ts);
+        self.current_page.max.extend_from_slice(record_key);
 
         self.page_offset += 1;
         if self.page_offset == LOWER_LEAF_SIZE {
@@ -164,11 +160,11 @@ impl<W: Write + Seek> SstWriter<W> {
             // Special case for an empty
             let p = -(self.size() as i32);
             // Write the terminator record.
-            self.writer.write_all(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0])?;
+            self.writer.write_all(&[0, 0])?;
             p
         } else {
             // Write the terminator record.
-            self.writer.write_all(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0])?;
+            self.writer.write_all(&[0, 0])?;
             let pages = std::mem::take(&mut self.data_pages);
             SstWriter::write_search_tree(pages, &mut self.writer)?
         };
@@ -248,8 +244,7 @@ v1
 
     #[test]
     fn test_sst_writer_empty() -> Result<(), Box<dyn Error>> {
-        let buf = Cursor::new(vec![]);
-        let mut sst_writer = SstWriter::new(buf)?;
+        let mut sst_writer = SstWriter::new(Cursor::new(vec![]))?;
         assert_eq!(sst_writer.size(), HEADER_SIZE);
 
         let output = sst_writer.finish()?.into_inner();
@@ -257,7 +252,7 @@ v1
         assert_eq!(
             &output[HEADER_SIZE..],
             [
-                0_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, // Terminator record
+                0_u8, 0, // Terminator record
                 255, 255, 255, 230, // Data pointer
                 0, 1 // File version
             ]
@@ -273,19 +268,20 @@ v1
         let rec_2_key_ts = [2_u8, 2, 0, 0, 0, 0, 0, 0, 0, 1];
         let rec_2_value = [6_u8];
 
-        let buf = Cursor::new(vec![]);
-        let mut sst_writer = SstWriter::new(buf)?;
+        let mut sst_writer = SstWriter::new(Cursor::new(vec![]))?;
         sst_writer.push_record(&rec_1_key_ts, &rec_1_value)?;
         sst_writer.push_record(&rec_2_key_ts, &rec_2_value)?;
 
         assert_eq!(
             &sst_writer.finish()?.into_inner()[HEADER_SIZE..],
             [
-                2_u8, 1_u8, 2, 0, 0, 0, 0, 0, 0, 0, 1, // key_len and key/ts
-                1_u8, 5_u8, // value_len and value
-                2_u8, 2_u8, 2, 0, 0, 0, 0, 0, 0, 0, 1, // key_len and key/ts
-                1_u8, 6_u8, // value_len and value,
-                0_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, // Terminator record
+                10_u8, 1_u8, // key, value lengths
+                1_u8, 2, 0, 0, 0, 0, 0, 0, 0, 1,    // key/ts
+                5_u8, // value
+                10_u8, 1_u8, // key, value lengths
+                2_u8, 2, 0, 0, 0, 0, 0, 0, 0, 1,    // key/ts
+                6_u8, // value,
+                0_u8, 0, // Terminator record
                 255, 255, 255, 230, // data pointer
                 0, 1 // File version
             ]
@@ -297,8 +293,7 @@ v1
     #[test]
     fn test_sst_writer_with_tree() -> Result<(), Box<dyn Error>> {
         // We need at least 17 records to trigger the btree to build
-        let buf = Cursor::new(vec![]);
-        let mut sst_writer = SstWriter::new(buf)?;
+        let mut sst_writer = SstWriter::new(Cursor::new(vec![]))?;
         for i in 0..17 {
             let rec_key_ts = [i as u8, 0, 0, 0, 0, 0, 0, 0, 0];
             let rec_value = [i as u8];
@@ -307,9 +302,9 @@ v1
 
         let mut expected_data = vec![];
         for i in 0..17 {
-            expected_data.push(1_u8); // key size
-            expected_data.extend_from_slice([i as u8, 0, 0, 0, 0, 0, 0, 0, 0].as_ref()); // key_ts
+            expected_data.push(9_u8); // key size
             expected_data.push(1_u8); // value size
+            expected_data.extend_from_slice([i as u8, 0, 0, 0, 0, 0, 0, 0, 0].as_ref()); // key_ts
             expected_data.push(i as u8); // value
         }
         let end_of_data = HEADER_SIZE + expected_data.len();
@@ -324,13 +319,13 @@ v1
         assert_eq!(
             &data[end_of_data..],
             [
-                0_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, // Terminator record
+                0_u8, 0, // Terminator record
                 1, 16, // Our pivot (len, bytes)
                 2,  // Child count -- This is where the footer should point to.
-                0, 0, 0, 240, // Pointer back to the first pivot
+                0, 0, 0, 232, // Pointer back to the first pivot
                 255, 255, 255, 230, // Child pointer to the start of the data block
                 255, 255, 255, 38, // pointer to data block 16 records later (16 * 12b = 192)
-                0, 0, 0, 242, // Pointer to the child count
+                0, 0, 0, 234, // Pointer to the child count
                 0, 1 // File version
             ]
         );

@@ -38,14 +38,13 @@ key_length: varint,
 value_length: varint,
 key: bytes,
 value: bytes,
-timestamp: u64,
 r1:
 key_length: varint,
 ...
 ```
 
-However, to stop us walking off the end we'll place `[0,0,0,0,0,0,0,0,0,0,0]`
-This could be interpreted as key_length = 0, value_length = 0, timestamp = 0.
+However, to stop us walking off the end we'll place `[0,0]`
+This could be interpreted as key_length = 0, value_length = 0.
 This allows a reader to read the whole record without the early break if
 that simplifies any implementations.
 

@@ -5,6 +5,7 @@ use utils::Timestamp;
 
 pub mod memory_file_store;
 pub mod records;
+pub mod sst_reader;
 pub mod sst_writer;
 
 /// Trait to be implemented for records to be written out, allows serializing
