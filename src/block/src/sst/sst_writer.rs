@@ -10,7 +10,7 @@ use utils::varint::write_varint_unsigned;
 /// This writer is rather low level and expects the data to be written to it in sorted order
 /// with no duplicates
 /// See https://github.com/tim-patterson/clortho/blob/master/docs/FILE_FORMAT.md
-/// for the file format produced by this writer.
+/// for the file_store format produced by this writer.
 pub struct SstWriter<W: Write + Seek> {
     writer: W,
     // List of low-level data pages.
@@ -40,7 +40,7 @@ const SEARCH_TREE_SIZE: usize = 64;
 const LOWER_LEAF_SIZE: usize = 16;
 
 impl<W: Write + Seek> SstWriter<W> {
-    /// Creates a new Sst Writer, the file header will be eagerly
+    /// Creates a new Sst Writer, the file_store header will be eagerly
     /// be written at this point.
     pub fn new(writer: W) -> std::io::Result<Self> {
         let mut sst_writer = SstWriter {
@@ -53,11 +53,11 @@ impl<W: Write + Seek> SstWriter<W> {
         Ok(sst_writer)
     }
 
-    /// Returns the size in bytes of the file so far,
-    /// Can be polled to assess the size of the file when
+    /// Returns the size in bytes of the file_store so far,
+    /// Can be polled to assess the size of the file_store when
     /// deciding the chunk the output.
     /// This only the size of the header + data section.
-    /// On file close/flush we'll write the btree and footer sections.
+    /// On file_store close/flush we'll write the btree and footer sections.
     pub fn size(&mut self) -> usize {
         self.writer.seek(SeekFrom::Current(0)).unwrap() as usize
     }
@@ -87,7 +87,7 @@ impl<W: Write + Seek> SstWriter<W> {
     }
 
     /// Writes the search tree portion of the block, returns the "pointer" into the root node of the
-    /// tree (or directly into the data if there's <=16 records in the file)
+    /// tree (or directly into the data if there's <=16 records in the file_store)
     fn write_search_tree(mut children: Vec<PageData>, writer: &mut W) -> std::io::Result<i32> {
         // Terminal condition.
         if let [child] = children.as_slice() {

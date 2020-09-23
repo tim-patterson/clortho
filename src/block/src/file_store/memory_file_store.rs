@@ -1,4 +1,4 @@
-use crate::FileStore;
+use crate::file_store::FileStore;
 use std::collections::HashMap;
 use std::io::{Cursor, Seek, SeekFrom, Write};
 use std::sync::{Arc, RwLock};
@@ -93,7 +93,7 @@ mod tests {
             // A read should give us nothing while the writer is in scope
             assert!(block_store.open_for_read("foobar").is_err());
         }
-        // we should be able to open the file for reading now, multiple times even
+        // we should be able to open the file_store for reading now, multiple times even
         let reader1 = block_store.open_for_read("foobar").unwrap();
         let reader2 = block_store.open_for_read("foobar").unwrap();
         assert_eq!(b"helloworld".as_ref(), reader1.deref());

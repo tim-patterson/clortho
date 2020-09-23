@@ -5,7 +5,7 @@ use utils::varint::read_varint_unsigned;
 
 /// Reader that can read an sst file
 /// See https://github.com/tim-patterson/clortho/blob/master/docs/FILE_FORMAT.md
-/// for the file format parsed by this reader.
+/// for the file_store format parsed by this reader.
 /// Conceptually the reader is like a (streaming) iterator where the current position can
 /// be moved around
 pub struct SstReader<D: Deref<Target = [u8]>> {
@@ -163,7 +163,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sst_writer::SstWriter;
+    use crate::sst::sst_writer::SstWriter;
     use std::error::Error;
     use std::io::Cursor;
 

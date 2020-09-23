@@ -1,15 +1,13 @@
-use std::io::{Seek, Write};
-use std::ops::Deref;
+use std::io::Write;
 use utils::streaming_iter::StreamingIter;
 use utils::Timestamp;
 
-pub mod memory_file_store;
+pub mod file_store;
 pub mod records;
-pub mod sst_reader;
-pub mod sst_writer;
+pub mod sst;
 
 /// Trait to be implemented for records to be written out, allows serializing
-/// directly into output buffer/file etc.
+/// directly into output buffer/file_store etc.
 pub trait KVWritable {
     fn write_key<W: Write>(&self, buffer: &mut W) -> std::io::Result<()>;
     fn write_value<W: Write>(&self, buffer: &mut W) -> std::io::Result<()>;
@@ -36,23 +34,4 @@ pub trait MergeFunction {
     fn latest_only() -> bool {
         false
     }
-}
-
-/// A Filesystem abstraction for writing/reading blocks. Allows us to swap on-disk with in-memory
-/// and even remote stores, as well as provide wrappers for caching etc.
-/// Written files are immutable once written.
-pub trait FileStore {
-    type W: Write + Seek + 'static;
-    type R: Deref<Target = [u8]> + 'static;
-    type E;
-
-    /// Returns a writer for a writing a new block
-    fn open_for_write(&self, identifier: &str) -> Result<Self::W, Self::E>;
-
-    /// Opens a block for reading
-    fn open_for_read(&self, identifier: &str) -> Result<Self::R, Self::E>;
-
-    /// Marks a block as able to be deleted, the delete should only happen
-    /// once existing references to this block are dropped.
-    fn delete(&self, identifier: &str) -> Result<(), Self::E>;
 }
