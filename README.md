@@ -23,6 +23,42 @@ aware file pruning.
 This project will attempt to build up the components needed bit by bit hopefully allowing
 each bit to be generic enough to be able to stand on its own.
 
+
+## Project Status
+As mentioned above this is project really consists of a collection of building blocks needed to build
+a KV(T) stores, as we progress we'll be able to arrange those blocks in different ways to form
+different embedded kv stores.
+
+#### Phase 1 - File layers
+The goal for the end of this phase is just to have a file format that we can read and write
+- [x] FileStore Abstraction and InMem Impl
+- [x] SST Writer(v1)
+- [ ] SST Reader(v1)
+- [ ] Local FileStore Impl
+
+#### Phase 2 - LSM
+The goal for this phase is to build the abstractions needed to progress from a bunch of SST's
+to a real LSM, at this point we need to define the abstractions that know about deltas vs
+absolutes vs tombstones
+- [ ] Merge function abstractions
+- [ ] Merging Iterator
+- [ ] LSM tree (meta) data structure.
+- [ ] Compaction Abstraction and Infra
+- [ ] LSM api
+
+#### Phase 3 - Bloom
+The goal for this phase is to build in the abstractions and infra needed to support
+filter files that can be built during sst writes to allow filtering at query time
+- [ ] Bloom filter implementation
+- [ ] Filter Writer Trait and default implementation
+- [ ] Api/hooks to hook this in to LSM api for queries
+
+#### Phase 4 - Cloud
+The goal for this phase is to support files being offloaded and retrieved to s3 and
+metadata(SST Tree) stored in dynamo.
+- [ ] Cloud FileStore implementation
+- [ ] Dynamo metadata syncing.
+
 ## How(the plan)
 The current idea here is to very roughly follow the basic rocksdb structure but with
 s3 being the "master" storage with files cached locally with metadata in dynamodb.

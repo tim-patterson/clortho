@@ -1,21 +1,21 @@
-use crate::BlockStore;
+use crate::FileStore;
 use std::collections::HashMap;
 use std::io::{Cursor, Seek, SeekFrom, Write};
 use std::sync::{Arc, RwLock};
 
 /// In memory block store
 #[derive(Debug, Default)]
-pub struct MemoryBlockStore {
+pub struct MemoryFileStore {
     map: Arc<RwLock<HashMap<String, Arc<[u8]>>>>,
 }
 
-impl BlockStore for MemoryBlockStore {
-    type W = MemoryBlockStoreWriter;
+impl FileStore for MemoryFileStore {
+    type W = MemoryFileStoreWriter;
     type R = Arc<[u8]>;
     type E = ();
 
     fn open_for_write(&self, identifier: &str) -> Result<Self::W, Self::E> {
-        let writer = MemoryBlockStoreWriter {
+        let writer = MemoryFileStoreWriter {
             buffer: Cursor::new(vec![]),
             identifier: identifier.to_string(),
             map: Arc::clone(&self.map),
@@ -41,13 +41,13 @@ impl BlockStore for MemoryBlockStore {
 /// Wrapper around vec, holds a reference back to the block store's internal map,
 /// when it goes out of scope(ie the write is finished), we'll add it to the block
 /// store and it will be avaliable for reads.
-pub struct MemoryBlockStoreWriter {
+pub struct MemoryFileStoreWriter {
     buffer: Cursor<Vec<u8>>,
     identifier: String,
     map: Arc<RwLock<HashMap<String, Arc<[u8]>>>>,
 }
 
-impl Write for MemoryBlockStoreWriter {
+impl Write for MemoryFileStoreWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.buffer.write(buf)
     }
@@ -61,13 +61,13 @@ impl Write for MemoryBlockStoreWriter {
     }
 }
 
-impl Seek for MemoryBlockStoreWriter {
+impl Seek for MemoryFileStoreWriter {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
         self.buffer.seek(pos)
     }
 }
 
-impl Drop for MemoryBlockStoreWriter {
+impl Drop for MemoryFileStoreWriter {
     fn drop(&mut self) {
         let buffer = std::mem::take(&mut self.buffer).into_inner();
         let identifier = std::mem::take(&mut self.identifier);
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_memory_block_store() {
-        let block_store = MemoryBlockStore::default();
+        let block_store = MemoryFileStore::default();
         {
             let mut writer = block_store.open_for_write("foobar").unwrap();
             writer.write_all(b"hello").unwrap();

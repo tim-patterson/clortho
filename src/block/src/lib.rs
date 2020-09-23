@@ -3,7 +3,7 @@ use std::ops::Deref;
 use utils::streaming_iter::StreamingIter;
 use utils::Timestamp;
 
-pub mod memory_block_store;
+pub mod memory_file_store;
 pub mod records;
 pub mod sst_writer;
 
@@ -40,7 +40,7 @@ pub trait MergeFunction {
 /// A Filesystem abstraction for writing/reading blocks. Allows us to swap on-disk with in-memory
 /// and even remote stores, as well as provide wrappers for caching etc.
 /// Written files are immutable once written.
-pub trait BlockStore {
+pub trait FileStore {
     type W: Write + Seek + 'static;
     type R: Deref<Target = [u8]> + 'static;
     type E;
