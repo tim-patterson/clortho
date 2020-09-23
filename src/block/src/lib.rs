@@ -3,9 +3,9 @@ use std::ops::Deref;
 use utils::streaming_iter::StreamingIter;
 use utils::Timestamp;
 
-//mod sst_writer;
 pub mod memory_block_store;
 pub mod records;
+pub mod sst_writer;
 
 /// Trait to be implemented for records to be written out, allows serializing
 /// directly into output buffer/file etc.

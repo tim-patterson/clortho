@@ -8,13 +8,13 @@ The data block can roughly be thought of as having the following sections.
 |header|sorted_data|b+tree pages|footer|
 ```
 
-We'll default to encoding fixed sized ints as bigendian..
+We'll default to encoding any fixed sized ints as bigendian..
 
 ### Header Section.
 The header section doesn't play any important part it the file format,
-Its just here as a place to put some generic magic bytes so we can check
-the file format easily using head.
-It consists of the following 10 lines (head's default).
+Most the machine-readable metadata will be at the end of the file.
+The header will consist of the 10 textual lines, so we can easily read it
+using head, its really just here to help with debugging.
 ```
 clortho
 data
@@ -44,10 +44,10 @@ key_length: varint,
 ...
 ```
 
-However to stop us walking off the end we'll place `[0,0,0,0,0,0,0,0,0,0,0]`
+However, to stop us walking off the end we'll place `[0,0,0,0,0,0,0,0,0,0,0]`
 This could be interpreted as key_length = 0, value_length = 0, timestamp = 0.
 This allows a reader to read the whole record without the early break if
-that simpifies any implementations
+that simplifies any implementations.
 
 ### B+Tree Section
 This section contains a bunch of btree pages.
