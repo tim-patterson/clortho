@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::io::{Seek, SeekFrom, Write};
+use utils::varint::write_varint_unsigned;
 
 // We're making the sst writer push based rather than pull(iterator) based under the assumption
 // that this will allow more flexibility in the higher layers rather than forcing everything above
@@ -41,7 +42,7 @@ const LOWER_LEAF_SIZE: usize = 16;
 impl<W: Write + Seek> SstWriter<W> {
     /// Creates a new Sst Writer, the file header will be eagerly
     /// be written at this point.
-    pub fn new(mut writer: W) -> Result<Self, std::io::Error> {
+    pub fn new(mut writer: W) -> std::io::Result<Self> {
         SstWriter::write_header(&mut writer)?;
         Ok(SstWriter {
             writer,
@@ -58,6 +59,32 @@ impl<W: Write + Seek> SstWriter<W> {
     /// On file close/flush we'll write the btree and footer sections.
     pub fn size(&mut self) -> usize {
         self.writer.seek(SeekFrom::Current(0)).unwrap() as usize
+    }
+
+    /// Pushes a record into the low-level storage, at this point we expect the timestamp to be
+    /// appended onto the record_key as u64 BE.
+    pub fn push_record(
+        &mut self,
+        record_key_ts: &[u8],
+        record_value: &[u8],
+    ) -> std::io::Result<i32> {
+        let record_pointer = -(self.size() as i32);
+        write_varint_unsigned(record_key_ts.len() as u32 - 8, &mut self.writer)?;
+        self.writer.write_all(record_key_ts)?;
+        write_varint_unsigned(record_value.len() as u32, &mut self.writer)?;
+        self.writer.write_all(record_value)?;
+        // Update page data
+        if self.page_offset == 0 {
+            self.current_page.min = Box::from(record_key_ts);
+            self.current_page.pointer = record_pointer;
+        }
+        self.page_offset += 1;
+        if self.page_offset == LOWER_LEAF_SIZE {
+            self.current_page.max = Box::from(record_key_ts);
+            self.page_offset = 0;
+            self.data_pages.push(std::mem::take(&mut self.current_page));
+        }
+        Ok(record_pointer)
     }
 
     // /// Flush all the data out to a local file.
@@ -220,6 +247,19 @@ mod tests {
     use std::error::Error;
     use std::io::Cursor;
 
+    const EXPECTED_HEADER: &[u8] = b"clortho
+data
+v1
+
+
+
+
+
+
+---
+";
+    const HEADER_SIZE: usize = 26;
+
     #[test]
     fn test_common_prefix_len() {
         // Same value
@@ -235,24 +275,41 @@ mod tests {
     }
 
     #[test]
-    fn test_sst_writer() -> Result<(), Box<dyn Error>> {
+    fn test_sst_writer_empty() -> Result<(), Box<dyn Error>> {
         let mut buf = Cursor::new(vec![]);
         {
             let mut sst_writer = SstWriter::new(&mut buf)?;
-            assert_eq!(26, sst_writer.size());
+            assert_eq!(sst_writer.size(), HEADER_SIZE);
         }
-        let expected_header = b"clortho
-data
-v1
 
+        assert_eq!(buf.into_inner().as_slice(), EXPECTED_HEADER);
+        Ok(())
+    }
 
+    #[test]
+    fn test_sst_writer_with_records() -> Result<(), Box<dyn Error>> {
+        let rec_1_key_ts = [1_u8, 2, 0, 0, 0, 0, 0, 0, 0, 1];
+        let rec_1_value = [5_u8];
+        let rec_2_key_ts = [2_u8, 2, 0, 0, 0, 0, 0, 0, 0, 1];
+        let rec_2_value = [6_u8];
 
+        let mut buf = Cursor::new(vec![]);
+        {
+            let mut sst_writer = SstWriter::new(&mut buf)?;
+            sst_writer.push_record(&rec_1_key_ts, &rec_1_value)?;
+            sst_writer.push_record(&rec_2_key_ts, &rec_2_value)?;
+        }
 
-
-
----
-";
-        assert_eq!(expected_header.as_ref(), buf.into_inner().as_slice());
+        assert_eq!(
+            &buf.into_inner()[HEADER_SIZE..],
+            [
+                2_u8, 1_u8, 2, 0, 0, 0, 0, 0, 0, 0, 1, // key_len and key/ts
+                1_u8, 5_u8, // value_len and value
+                2_u8, 2_u8, 2, 0, 0, 0, 0, 0, 0, 0, 1, // key_len and key/ts
+                1_u8, 6_u8, // value_len and value
+            ]
+            .as_ref()
+        );
         Ok(())
     }
 }
