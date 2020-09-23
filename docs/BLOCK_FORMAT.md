@@ -97,10 +97,8 @@ start of the page.
 ### Footer Section
 Due to us building up the file as we go, our entry point to the file is actually in the footer.
 Its main purpose is to provide the initial pointer into our root b+tree page.
-But we also use it to store some machine-readable metadata.
 Its layout is
 ```
-write_timestamp: u64
 search_pointer: i32
 version: u16(always 1)
 ```
