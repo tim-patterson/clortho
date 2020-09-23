@@ -90,6 +90,68 @@ impl<W: Write + Seek> SstWriter<W> {
         Ok(record_pointer)
     }
 
+    /// Writes the search tree portion of the block, returns the "pointer" into the root node of the
+    /// tree (or directly into the data if there's <=16 records in the file)
+    fn write_search_tree(mut children: Vec<PageData>, writer: &mut W) -> std::io::Result<i32> {
+        // Terminal condition.
+        if let [child] = children.as_slice() {
+            return Ok(child.pointer);
+        } else if children.is_empty() {
+            panic!("We can't write a search tree for 0 items...")
+        }
+
+        let mut child_pages = Vec::with_capacity(children.len() / SEARCH_TREE_SIZE + 1);
+
+        for chunk in children.chunks_mut(SEARCH_TREE_SIZE) {
+            // If the chunk only has one child we call just pass up the whole page
+            // if there was 17 records we would hit this case for example. The result is simply that
+            // some pointers may skip over a layer instead of pointing to a pivotless page.
+            if let [page] = chunk {
+                child_pages.push(std::mem::take(page))
+            }
+
+            // Write pivots
+            let pivot_pointers = chunk
+                .windows(2)
+                .map::<Result<_, std::io::Error>, _>(|left_right| {
+                    let left_val = left_right[0].max.as_ref();
+                    let right_val = left_right[1].min.as_ref();
+                    // The common prefix + 1 extra char from the right side is all that's required
+                    // to truncate the prefix down to the minimal possible size
+                    let pivot = &right_val[..(common_prefix_len(left_val, right_val) + 1)];
+                    let pointer = writer.seek(SeekFrom::Current(0)).unwrap() as i32;
+                    write_varint_unsigned(pivot.len() as u32, writer)?;
+                    writer.write_all(pivot)?;
+                    Ok(pointer)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let page_pointer = writer.seek(SeekFrom::Current(0)).unwrap() as i32;
+            // Write child count
+            writer.write_all(&[chunk.len() as u8])?;
+            // Write pivot pointers
+            for pointer in pivot_pointers {
+                writer.write_all(pointer.to_be_bytes().as_ref())?;
+            }
+            // Write child pointers
+            for child in chunk.iter() {
+                writer.write_all(child.pointer.to_be_bytes().as_ref())?;
+            }
+
+            let min_tuple = std::mem::take(&mut chunk.first_mut().unwrap().min);
+            let max_tuple = std::mem::take(&mut chunk.first_mut().unwrap().max);
+
+            child_pages.push(PageData {
+                min: min_tuple,
+                max: max_tuple,
+                pointer: page_pointer,
+            })
+        }
+
+        // Recurse...
+        SstWriter::write_search_tree(child_pages, writer)
+    }
+
     /// Let the writer know that we're done with the data,
     /// at this point the writer can write
     pub fn finish(mut self) -> std::io::Result<W> {
@@ -97,15 +159,21 @@ impl<W: Write + Seek> SstWriter<W> {
         if self.page_offset != 0 {
             self.data_pages.push(std::mem::take(&mut self.current_page))
         }
-        // Grab the pointer to the start of the data
-        let data_pointer = self
-            .data_pages
-            .first()
-            .map(|page| page.pointer)
-            .unwrap_or_else(|| -(self.size() as i32));
-        // Write the terminator record.
-        self.writer.write_all(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0])?;
-        self.write_footer(data_pointer)?;
+
+        let root_pointer = if self.data_pages.is_empty() {
+            // Special case for an empty
+            let p = -(self.size() as i32);
+            // Write the terminator record.
+            self.writer.write_all(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0])?;
+            p
+        } else {
+            // Write the terminator record.
+            self.writer.write_all(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0])?;
+            let pages = std::mem::take(&mut self.data_pages);
+            SstWriter::write_search_tree(pages, &mut self.writer)?
+        };
+
+        self.write_footer(root_pointer)?;
 
         Ok(self.writer)
     }
@@ -133,100 +201,6 @@ v1
         // Version
         self.writer.write_all(1_u16.to_be_bytes().as_ref())
     }
-
-    // /// Writes out the data, returns the the needed data to build the next layer of the btree
-    // fn write_data<'a, W: Write + Seek>(
-    //     buffer: &'a [u8],
-    //     pointers: &mut Vec<(u32, u32, u32)>,
-    //     writer: &mut W,
-    // ) -> Result<Vec<PageData<'a>>, std::io::Error> {
-    //     // Sort the data
-    //     pointers.sort_unstable_by(|(start1, end1, _), (start2, end2, _)| {
-    //         let a = &buffer[(*start1 as usize)..(*end1 as usize)];
-    //         let b = &buffer[(*start2 as usize)..(*end2 as usize)];
-    //         a.cmp(b)
-    //     });
-    //
-    //     let mut page_datas = Vec::with_capacity(pointers.len() / LOWER_LEAF_SIZE + 1);
-    //
-    //     // TODO we actually need to do some magic here and merge duplicates if we expect this to be
-    //     // able to be used directly.
-    //     panic!();
-    //     for chunk in pointers.chunks(LOWER_LEAF_SIZE) {
-    //         let (min_start, min_key_end, _) = chunk.first().unwrap();
-    //         let (max_start, max_key_end, _) = chunk.last().unwrap();
-    //         let min_key = &buffer[(*min_start as usize)..(*min_key_end as usize)];
-    //         let max_key = &buffer[(*max_start as usize)..(*max_key_end as usize)];
-    //
-    //         let pointer = -(writer.seek(SeekFrom::Current(0)).unwrap() as i32);
-    //
-    //         for data_pointer in chunk {
-    //             SstWriter::write_record(buffer, data_pointer, writer)?;
-    //         }
-    //
-    //         page_datas.push(PageData {
-    //             min: min_key,
-    //             max: max_key,
-    //             pointer,
-    //         });
-    //     }
-    //     writer.write_all(b"\0\0\0\0")?;
-    //
-    //     Ok(page_datas)
-    // }
-    //
-    // /// Writes the search tree portion of the block, returns the "pointer" into the root node of the
-    // /// tree (or directly into the data if there's <=16 records in the file)
-    // fn write_search_tree<W: Write + Seek>(
-    //     children: &[PageData],
-    //     writer: &mut W,
-    // ) -> Result<i32, std::io::Error> {
-    //     if let [child] = children {
-    //         return Ok(child.pointer);
-    //     } else if children.is_empty() {
-    //         panic!("We can't write a search tree for 0 items...")
-    //     }
-    //
-    //     let mut child_pages = Vec::with_capacity(children.len() / SEARCH_TREE_SIZE + 1);
-    //
-    //     for chunk in children.chunks(SEARCH_TREE_SIZE) {
-    //         // Write pivots
-    //         let pivot_pointers = chunk
-    //             .windows(2)
-    //             .map::<Result<_, std::io::Error>, _>(|left_right| {
-    //                 let left_val = left_right[0].max;
-    //                 let right_val = left_right[1].min;
-    //                 let pivot = &right_val[..(common_prefix_len(left_val, right_val))];
-    //                 let pointer = writer.seek(SeekFrom::Current(0)).unwrap() as i32;
-    //                 write_varint_unsigned(pivot.len() as u32, writer)?;
-    //                 writer.write_all(pivot)?;
-    //                 Ok(pointer)
-    //             })
-    //             .collect::<Result<Vec<_>, _>>()?;
-    //
-    //         let page_pointer = writer.seek(SeekFrom::Current(0)).unwrap() as i32;
-    //         // Write child count
-    //         writer.write_all(&[chunk.len() as u8])?;
-    //         // Write pivot pointers
-    //         for pointer in pivot_pointers {
-    //             writer.write_all(pointer.to_be_bytes().as_ref())?;
-    //         }
-    //         // Write child pointers
-    //         for child in chunk {
-    //             writer.write_all(child.pointer.to_be_bytes().as_ref())?;
-    //         }
-    //
-    //         child_pages.push(PageData {
-    //             min: chunk.first().unwrap().min,
-    //             max: chunk.last().unwrap().max,
-    //             pointer: page_pointer,
-    //         })
-    //     }
-    //
-    //     // Recurse...
-    //     SstWriter::write_search_tree(&child_pages, writer)
-    // }
-    //
 }
 
 /// Returns the length in bytes of the common prefix of two byte arrays,
@@ -316,6 +290,49 @@ v1
                 0, 1 // File version
             ]
             .as_ref()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_sst_writer_with_tree() -> Result<(), Box<dyn Error>> {
+        // We need at least 17 records to trigger the btree to build
+        let buf = Cursor::new(vec![]);
+        let mut sst_writer = SstWriter::new(buf)?;
+        for i in 0..17 {
+            let rec_key_ts = [i as u8, 0, 0, 0, 0, 0, 0, 0, 0];
+            let rec_value = [i as u8];
+            sst_writer.push_record(&rec_key_ts, &rec_value)?;
+        }
+
+        let mut expected_data = vec![];
+        for i in 0..17 {
+            expected_data.push(1_u8); // key size
+            expected_data.extend_from_slice([i as u8, 0, 0, 0, 0, 0, 0, 0, 0].as_ref()); // key_ts
+            expected_data.push(1_u8); // value size
+            expected_data.push(i as u8); // value
+        }
+        let end_of_data = HEADER_SIZE + expected_data.len();
+
+        let data = sst_writer.finish()?.into_inner();
+
+        // Check data section
+        assert_eq!(&data[HEADER_SIZE..end_of_data], expected_data.as_slice());
+
+        // Check btree and footer
+        // Here we'd expect a 1 layer btree with 1 node containing 1 pivot and 2 children.
+        assert_eq!(
+            &data[end_of_data..],
+            [
+                0_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, // Terminator record
+                1, 16, // Our pivot (len, bytes)
+                2,  // Child count -- This is where the footer should point to.
+                0, 0, 0, 240, // Pointer back to the first pivot
+                255, 255, 255, 230, // Child pointer to the start of the data block
+                255, 255, 255, 38, // pointer to data block 16 records later (16 * 12b = 192)
+                0, 0, 0, 242, // Pointer to the child count
+                0, 1 // File version
+            ]
         );
         Ok(())
     }
