@@ -1,4 +1,4 @@
-use crate::file_store::FileStore;
+use crate::file_store::{FileStore, Writable};
 use std::collections::HashMap;
 use std::io::{Cursor, Seek, SeekFrom, Write};
 use std::sync::{Arc, RwLock};
@@ -19,6 +19,7 @@ impl FileStore for MemoryFileStore {
             buffer: Cursor::new(vec![]),
             identifier: identifier.to_string(),
             map: Arc::clone(&self.map),
+            flushed: false,
         };
         Ok(writer)
     }
@@ -45,6 +46,7 @@ pub struct MemoryFileStoreWriter {
     buffer: Cursor<Vec<u8>>,
     identifier: String,
     map: Arc<RwLock<HashMap<String, Arc<[u8]>>>>,
+    flushed: bool,
 }
 
 impl Write for MemoryFileStoreWriter {
@@ -67,8 +69,20 @@ impl Seek for MemoryFileStoreWriter {
     }
 }
 
+impl Writable for MemoryFileStoreWriter {
+    fn flush_and_close(mut self) -> std::io::Result<()> {
+        self.flush()?;
+        // Nothing needed to be done here
+        self.flushed = true;
+        Ok(())
+    }
+}
+
 impl Drop for MemoryFileStoreWriter {
     fn drop(&mut self) {
+        if !self.flushed {
+            panic!("File dropped without being flushed")
+        }
         let buffer = std::mem::take(&mut self.buffer).into_inner();
         let identifier = std::mem::take(&mut self.identifier);
         self.map
@@ -86,13 +100,14 @@ mod tests {
     #[test]
     fn test_memory_block_store() {
         let block_store = MemoryFileStore::default();
-        {
-            let mut writer = block_store.open_for_write("foobar").unwrap();
-            writer.write_all(b"hello").unwrap();
-            writer.write_all(b"world").unwrap();
-            // A read should give us nothing while the writer is in scope
-            assert!(block_store.open_for_read("foobar").is_err());
-        }
+
+        let mut writer = block_store.open_for_write("foobar").unwrap();
+        writer.write_all(b"hello").unwrap();
+        writer.write_all(b"world").unwrap();
+        // A read should give us nothing while the writer is in scope
+        assert!(block_store.open_for_read("foobar").is_err());
+        writer.flush_and_close().unwrap();
+
         // we should be able to open the file_store for reading now, multiple times even
         let reader1 = block_store.open_for_read("foobar").unwrap();
         let reader2 = block_store.open_for_read("foobar").unwrap();

@@ -35,7 +35,7 @@ The goal for the end of this phase is just to have a file format that we can rea
 - [x] SST Writer(v1)
 - [x] SST Reader(v1)
 - [x] SST RecordWriter(buffered)
-- [ ] Local FileStore Impl
+- [x] Local FileStore Impl
 
 #### Phase 2 - LSM
 The goal for this phase is to build the abstractions needed to progress from a bunch of SST's
