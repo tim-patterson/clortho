@@ -1,4 +1,7 @@
-use crate::{KVWritable, MergeFunction};
+// NOTE this file is removed from the module tree at the moment
+
+use crate::records::KVWritable;
+use crate::MergeFunction;
 use std::io::Write;
 use utils::streaming_iter::StreamingIter;
 use utils::varint::{read_varint_signed, write_varint_signed};
@@ -34,10 +37,6 @@ impl KVWritable for CounterRecord<'_> {
 
     fn write_value<W: Write>(&self, buffer: &mut W) -> std::io::Result<()> {
         write_varint_signed(self.delta, buffer)
-    }
-
-    fn timestamp(&self) -> Timestamp {
-        self.timestamp
     }
 }
 

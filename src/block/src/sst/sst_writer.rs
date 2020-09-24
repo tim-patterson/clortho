@@ -65,6 +65,9 @@ impl<W: Write + Seek> SstWriter<W> {
     /// Pushes a record into the low-level storage, at this point we expect the timestamp to be
     /// appended onto the record_key as u64 BE.
     pub fn push_record(&mut self, record_key: &[u8], record_value: &[u8]) -> std::io::Result<i32> {
+        // Unfortunately we must know the record_key/value length upfront so we can't use the
+        // KVWriteable interface, however in the future a KVWriteableWithLen might be an optimization
+        // that could work in some cases.
         let record_pointer = -(self.size() as i32);
         write_varint_unsigned(record_key.len() as u32, &mut self.writer)?;
         write_varint_unsigned(record_value.len() as u32, &mut self.writer)?;
@@ -148,8 +151,8 @@ impl<W: Write + Seek> SstWriter<W> {
         SstWriter::write_search_tree(child_pages, writer)
     }
 
-    /// Let the writer know that we're done with the data,
-    /// at this point the writer can write
+    /// Let the writer know that we're done with the writes,
+    /// at this point the writer can write any needed indexes etc
     pub fn finish(mut self) -> std::io::Result<W> {
         // Copy across current page.
         if self.page_offset != 0 {

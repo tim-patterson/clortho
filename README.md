@@ -34,8 +34,7 @@ The goal for the end of this phase is just to have a file format that we can rea
 - [x] FileStore Abstraction and InMem Impl
 - [x] SST Writer(v1)
 - [x] SST Reader(v1)
-- [ ] SST RecordWriter(buffered)
-- [ ] SST RecordReader
+- [x] SST RecordWriter(buffered)
 - [ ] Local FileStore Impl
 
 #### Phase 2 - LSM
