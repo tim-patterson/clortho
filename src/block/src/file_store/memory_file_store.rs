@@ -1,7 +1,8 @@
 use crate::file_store::{FileStore, Writable};
 use std::collections::HashMap;
-use std::io::{Cursor, Seek, SeekFrom, Write};
+use std::io::{Cursor, ErrorKind, Seek, SeekFrom, Write};
 use std::sync::{Arc, RwLock};
+use std::thread::panicking;
 
 /// In memory block store
 #[derive(Debug, Default)]
@@ -12,9 +13,8 @@ pub struct MemoryFileStore {
 impl FileStore for MemoryFileStore {
     type W = MemoryFileStoreWriter;
     type R = Arc<[u8]>;
-    type E = ();
 
-    fn open_for_write(&self, identifier: &str) -> Result<Self::W, Self::E> {
+    fn open_for_write(&self, identifier: &str) -> std::io::Result<Self::W> {
         let writer = MemoryFileStoreWriter {
             buffer: Cursor::new(vec![]),
             identifier: identifier.to_string(),
@@ -24,16 +24,18 @@ impl FileStore for MemoryFileStore {
         Ok(writer)
     }
 
-    fn open_for_read(&self, identifier: &str) -> Result<Self::R, Self::E> {
+    fn open_for_read(&self, identifier: &str) -> std::io::Result<Self::R> {
         self.map
             .read()
             .unwrap()
             .get(identifier)
             .map(Arc::clone)
-            .ok_or(())
+            .ok_or_else(|| {
+                std::io::Error::new(ErrorKind::NotFound, format!("{} not found", identifier))
+            })
     }
 
-    fn delete(&self, identifier: &str) -> Result<(), Self::E> {
+    fn delete(&self, identifier: &str) -> std::io::Result<()> {
         self.map.write().unwrap().remove(identifier);
         Ok(())
     }
@@ -80,7 +82,7 @@ impl Writable for MemoryFileStoreWriter {
 
 impl Drop for MemoryFileStoreWriter {
     fn drop(&mut self) {
-        if !self.flushed {
+        if !self.flushed & !panicking() {
             panic!("File dropped without being flushed")
         }
         let buffer = std::mem::take(&mut self.buffer).into_inner();

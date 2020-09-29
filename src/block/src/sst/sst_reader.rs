@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::convert::TryInto;
+use std::marker::PhantomData;
 use std::ops::Deref;
 use utils::varint::read_varint_unsigned;
 
@@ -7,8 +8,10 @@ use utils::varint::read_varint_unsigned;
 /// See https://github.com/tim-patterson/clortho/blob/master/docs/FILE_FORMAT.md
 /// for the file_store format parsed by this reader.
 /// Conceptually the reader is like a (streaming) iterator where the current position can
-/// be moved around
-pub struct SstReader<D: Deref<Target = [u8]>> {
+/// be moved around.
+/// As this does no IO its infallible so wont ever throw in the StreamingKVIter interface,
+/// so we allow the error type to be specified by the caller to align with other interfaces as needed
+pub struct SstReader<D: Deref<Target = [u8]>, E = std::io::Error> {
     data: D,
     // The position of the *next* record.
     // Static isn't the right lifetime as its really a slice out of data but we can't do
@@ -16,6 +19,7 @@ pub struct SstReader<D: Deref<Target = [u8]>> {
     // we'd end up paying for a whole bunch more bounds checking than we really need
     next_position: Option<&'static [u8]>,
     key_value: Option<(&'static [u8], &'static [u8])>,
+    _p: PhantomData<E>,
 }
 
 impl<D: Deref<Target = [u8]>> SstReader<D> {
@@ -25,6 +29,7 @@ impl<D: Deref<Target = [u8]>> SstReader<D> {
             data,
             next_position: None,
             key_value: None,
+            _p: PhantomData::default(),
         }
     }
 
@@ -64,7 +69,7 @@ impl<D: Deref<Target = [u8]>> SstReader<D> {
     }
 
     /// Returns the data at the current position
-    pub fn get(&self) -> Option<(&'static [u8], &'static [u8])> {
+    pub fn get(&self) -> Option<(&[u8], &[u8])> {
         self.key_value
     }
 
@@ -180,10 +185,11 @@ mod tests {
 
     #[test]
     fn test_sst_reader_empty() -> Result<(), Box<dyn Error>> {
-        let sst_writer = SstWriter::new(Cursor::new(vec![]))?;
-        let output = sst_writer.finish()?.into_inner();
+        let mut output = Cursor::new(vec![]);
+        let sst_writer = SstWriter::new(&mut output)?;
+        sst_writer.finish()?;
 
-        let mut reader = SstReader::new(output);
+        let mut reader = SstReader::new(output.into_inner());
 
         reader.seek(b"1");
         assert_eq!(reader.get(), None);
@@ -192,13 +198,14 @@ mod tests {
 
     #[test]
     fn test_sst_reader_no_btree() -> Result<(), Box<dyn Error>> {
-        let mut sst_writer = SstWriter::new(Cursor::new(vec![]))?;
+        let mut output = Cursor::new(vec![]);
+        let mut sst_writer = SstWriter::new(&mut output)?;
         sst_writer.push_record(b"a", b"1")?;
         sst_writer.push_record(b"c", b"2")?;
         sst_writer.push_record(b"e", b"3")?;
-        let output = sst_writer.finish()?.into_inner();
+        sst_writer.finish()?;
 
-        let mut reader = SstReader::new(output);
+        let mut reader = SstReader::new(output.into_inner());
 
         reader.seek(b"");
         assert_eq!(reader.get(), Some((b"a".as_ref(), b"1".as_ref())));
@@ -219,13 +226,14 @@ mod tests {
 
     #[test]
     fn test_sst_reader_advance() -> Result<(), Box<dyn Error>> {
-        let mut sst_writer = SstWriter::new(Cursor::new(vec![]))?;
+        let mut output = Cursor::new(vec![]);
+        let mut sst_writer = SstWriter::new(&mut output)?;
         sst_writer.push_record(b"a", b"1")?;
         sst_writer.push_record(b"c", b"2")?;
         sst_writer.push_record(b"e", b"3")?;
-        let output = sst_writer.finish()?.into_inner();
+        sst_writer.finish()?;
 
-        let mut reader = SstReader::new(output);
+        let mut reader = SstReader::new(output.into_inner());
 
         reader.seek(b"a");
         assert_eq!(reader.get(), Some((b"a".as_ref(), b"1".as_ref())));
@@ -240,15 +248,16 @@ mod tests {
 
     #[test]
     fn test_sst_reader_with_btree() -> Result<(), Box<dyn Error>> {
-        let mut sst_writer = SstWriter::new(Cursor::new(vec![]))?;
+        let mut output = Cursor::new(vec![]);
+        let mut sst_writer = SstWriter::new(&mut output)?;
         // To get 2 btree levels we need > 16 * 64 records
         for i in 0..2000_i32 {
             sst_writer.push_record(&(i).to_be_bytes(), b"1")?;
         }
 
-        let output = sst_writer.finish()?.into_inner();
+        sst_writer.finish()?;
 
-        let mut reader = SstReader::new(output);
+        let mut reader = SstReader::new(output.into_inner());
 
         reader.seek(b"");
         assert_eq!(

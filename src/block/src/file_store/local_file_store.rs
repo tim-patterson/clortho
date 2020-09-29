@@ -7,6 +7,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
+use std::thread::panicking;
 
 /// File store managing files on disk,
 /// For reading we use pooled mmap'd files.
@@ -27,9 +28,8 @@ impl LocalFileStore {
 impl FileStore for LocalFileStore {
     type W = LocalFileStoreWriter;
     type R = LocalFileStoreReader;
-    type E = std::io::Error;
 
-    fn open_for_write(&self, identifier: &str) -> Result<Self::W, Self::E> {
+    fn open_for_write(&self, identifier: &str) -> std::io::Result<Self::W> {
         let file = OpenOptions::new()
             .truncate(true)
             .write(true)
@@ -43,7 +43,7 @@ impl FileStore for LocalFileStore {
         Ok(writer)
     }
 
-    fn open_for_read(&self, identifier: &str) -> Result<Self::R, Self::E> {
+    fn open_for_read(&self, identifier: &str) -> std::io::Result<Self::R> {
         // First check to see if we already have the file mmapped somewhere
         {
             let open_files = self.open_files.read().unwrap();
@@ -68,7 +68,7 @@ impl FileStore for LocalFileStore {
         Ok(LocalFileStoreReader(mem_view))
     }
 
-    fn delete(&self, identifier: &str) -> Result<(), Self::E> {
+    fn delete(&self, identifier: &str) -> std::io::Result<()> {
         // Here we don't actually delete but just set a delete flag instead.
         let mut open_files = self.open_files.write().unwrap();
         if let Some(existing) = open_files.remove(identifier) {
@@ -117,7 +117,7 @@ impl Writable for LocalFileStoreWriter {
 /// Just here as a check to make sure that the rest of the code base does the right thing
 impl Drop for LocalFileStoreWriter {
     fn drop(&mut self) {
-        if !self.flushed {
+        if !self.flushed && !panicking() {
             panic!("File dropped without being flushed")
         }
     }

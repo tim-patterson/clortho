@@ -7,11 +7,17 @@ use std::marker::PhantomData;
 /// deal with when iterating from sources like files where errors may occur.
 /// This makes this iterator perfect for data processing type workloads.
 /// Because we past by reference, its difficult to compose kv pairs as &(K, V) so we support KV as
-/// a top level concept to instead support passes kv pairs as (&K, &V)
+/// a top level concept to instead support passes kv pairs as (&K, &V).
+///
+/// Really this iterator is specialized for use with a key value store....
 pub trait StreamingKVIter {
     type K: ?Sized;
     type V: ?Sized;
     type E;
+
+    /// Reposition the current position of the iterator.
+    fn seek(&mut self, key: &Self::K) -> Result<(), Self::E>;
+
     /// Advance the iterator to the next position, should be called before get for a new iter
     fn advance(&mut self) -> Result<(), Self::E>;
 
@@ -56,6 +62,10 @@ impl<K: ?Sized, V: ?Sized, E> StreamingKVIter for EmptyIter<K, V, E> {
     type K = K;
     type V = V;
     type E = E;
+    fn seek(&mut self, _key: &Self::K) -> Result<(), Self::E> {
+        Ok(())
+    }
+
     fn advance(&mut self) -> Result<(), Self::E> {
         Ok(())
     }
@@ -66,6 +76,7 @@ impl<K: ?Sized, V: ?Sized, E> StreamingKVIter for EmptyIter<K, V, E> {
 }
 
 /// An streaming iterator that wraps a standard iter returning a reference.
+/// Mostly used for tests...
 pub struct WrappingIter<'a, IT: Iterator, K: ?Sized + 'a, V: ?Sized + 'a, E>
 where
     IT: Iterator<Item = (&'a K, &'a V)>,
@@ -82,6 +93,10 @@ where
     type K = K;
     type V = V;
     type E = E;
+    fn seek(&mut self, _key: &Self::K) -> Result<(), Self::E> {
+        panic!()
+    }
+
     fn advance(&mut self) -> Result<(), Self::E> {
         self.item = self.inner.next();
         Ok(())

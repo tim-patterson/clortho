@@ -1,6 +1,7 @@
 use std::io::Write;
 
 pub mod file_store;
+pub mod lsm;
 pub mod merge;
 pub mod records;
 pub mod sst;

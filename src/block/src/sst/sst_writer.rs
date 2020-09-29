@@ -1,5 +1,7 @@
+use crate::file_store::Writable;
+use crate::sst::SstInfo;
 use std::cmp::min;
-use std::io::{Seek, SeekFrom, Write};
+use std::io::SeekFrom;
 use utils::varint::write_varint_unsigned;
 
 // We're making the sst writer push based rather than pull(iterator) based under the assumption
@@ -11,7 +13,7 @@ use utils::varint::write_varint_unsigned;
 /// with no duplicates
 /// See https://github.com/tim-patterson/clortho/blob/master/docs/FILE_FORMAT.md
 /// for the file_store format produced by this writer.
-pub struct SstWriter<W: Write + Seek> {
+pub struct SstWriter<W: Writable> {
     writer: W,
     // List of low-level data pages.
     data_pages: Vec<PageData>,
@@ -39,7 +41,7 @@ const SEARCH_TREE_SIZE: usize = 64;
 // and things like prefix compression would be reset at these intervals.
 const LOWER_LEAF_SIZE: usize = 16;
 
-impl<W: Write + Seek> SstWriter<W> {
+impl<W: Writable> SstWriter<W> {
     /// Creates a new Sst Writer, the file_store header will be eagerly
     /// be written at this point.
     pub fn new(writer: W) -> std::io::Result<Self> {
@@ -153,11 +155,25 @@ impl<W: Write + Seek> SstWriter<W> {
 
     /// Let the writer know that we're done with the writes,
     /// at this point the writer can write any needed indexes etc
-    pub fn finish(mut self) -> std::io::Result<W> {
+    pub fn finish(mut self) -> std::io::Result<SstInfo> {
         // Copy across current page.
         if self.page_offset != 0 {
             self.data_pages.push(std::mem::take(&mut self.current_page))
         }
+
+        let mut sst_info = if self.data_pages.is_empty() {
+            SstInfo {
+                min_record: Box::from([].as_ref()),
+                max_record: Box::from([].as_ref()),
+                size: 0,
+            }
+        } else {
+            SstInfo {
+                min_record: Box::from(self.data_pages.first().unwrap().min.as_slice()),
+                max_record: Box::from(self.data_pages.last().unwrap().max.as_slice()),
+                size: 0,
+            }
+        };
 
         let root_pointer = if self.data_pages.is_empty() {
             // Special case for an empty
@@ -174,7 +190,10 @@ impl<W: Write + Seek> SstWriter<W> {
 
         self.write_footer(root_pointer)?;
 
-        Ok(self.writer)
+        sst_info.size = self.size() as u32;
+
+        self.writer.flush_and_close()?;
+        Ok(sst_info)
     }
 
     /// Writes the block header
@@ -247,13 +266,18 @@ v1
 
     #[test]
     fn test_sst_writer_empty() -> Result<(), Box<dyn Error>> {
-        let mut sst_writer = SstWriter::new(Cursor::new(vec![]))?;
+        let mut output = Cursor::new(vec![]);
+        let mut sst_writer = SstWriter::new(&mut output)?;
         assert_eq!(sst_writer.size(), HEADER_SIZE);
 
-        let output = sst_writer.finish()?.into_inner();
-        assert_eq!(&output[..HEADER_SIZE], EXPECTED_HEADER);
+        let sst_info = sst_writer.finish()?;
+        let data = output.into_inner();
+
+        assert_eq!(sst_info.min_record, Box::from([].as_ref()));
+        assert_eq!(sst_info.max_record, Box::from([].as_ref()));
+        assert_eq!(&data[..HEADER_SIZE], EXPECTED_HEADER);
         assert_eq!(
-            &output[HEADER_SIZE..],
+            &data[HEADER_SIZE..],
             [
                 0_u8, 0, // Terminator record
                 255, 255, 255, 230, // Data pointer
@@ -271,12 +295,18 @@ v1
         let rec_2_key_ts = [2_u8, 2, 0, 0, 0, 0, 0, 0, 0, 1];
         let rec_2_value = [6_u8];
 
-        let mut sst_writer = SstWriter::new(Cursor::new(vec![]))?;
+        let mut output = Cursor::new(vec![]);
+        let mut sst_writer = SstWriter::new(&mut output)?;
         sst_writer.push_record(&rec_1_key_ts, &rec_1_value)?;
         sst_writer.push_record(&rec_2_key_ts, &rec_2_value)?;
+        let sst_info = sst_writer.finish()?;
+        let data = output.into_inner();
+
+        assert_eq!(sst_info.min_record, Box::from(rec_1_key_ts.as_ref()));
+        assert_eq!(sst_info.max_record, Box::from(rec_2_key_ts.as_ref()));
 
         assert_eq!(
-            &sst_writer.finish()?.into_inner()[HEADER_SIZE..],
+            &data[HEADER_SIZE..],
             [
                 10_u8, 1_u8, // key, value lengths
                 1_u8, 2, 0, 0, 0, 0, 0, 0, 0, 1,    // key/ts
@@ -296,7 +326,8 @@ v1
     #[test]
     fn test_sst_writer_with_tree() -> Result<(), Box<dyn Error>> {
         // We need at least 17 records to trigger the btree to build
-        let mut sst_writer = SstWriter::new(Cursor::new(vec![]))?;
+        let mut output = Cursor::new(vec![]);
+        let mut sst_writer = SstWriter::new(&mut output)?;
         for i in 0..17 {
             let rec_key_ts = [i as u8, 0, 0, 0, 0, 0, 0, 0, 0];
             let rec_value = [i as u8];
@@ -312,7 +343,17 @@ v1
         }
         let end_of_data = HEADER_SIZE + expected_data.len();
 
-        let data = sst_writer.finish()?.into_inner();
+        let sst_info = sst_writer.finish()?;
+        let data = output.into_inner();
+
+        assert_eq!(
+            sst_info.min_record,
+            Box::from([0_u8, 0, 0, 0, 0, 0, 0, 0, 0].as_ref())
+        );
+        assert_eq!(
+            sst_info.max_record,
+            Box::from([16_u8, 0, 0, 0, 0, 0, 0, 0, 0].as_ref())
+        );
 
         // Check data section
         assert_eq!(&data[HEADER_SIZE..end_of_data], expected_data.as_slice());

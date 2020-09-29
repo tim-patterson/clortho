@@ -1,13 +1,14 @@
+use crate::file_store::Writable;
 use crate::merge::Merger;
 use crate::sst::sst_writer::SstWriter;
+use crate::sst::SstInfo;
 use crate::KVWritable;
-use std::io::{Seek, Write};
 use utils::streaming_iter;
 
 /// A Wrapper around the raw sst writer that allows us to write the data out
 /// in any order we want, simply buffering and then sorting when finishing,
 /// We need a merger to allow us to combine duplicate keys before flushing
-pub struct SstBufferedWriter<W: Write + Seek, M: Merger> {
+pub struct SstBufferedWriter<W: Writable, M: Merger> {
     inner: SstWriter<W>,
     // Buffer of raw KV bytes
     bytes_buffer: Vec<u8>,
@@ -16,7 +17,7 @@ pub struct SstBufferedWriter<W: Write + Seek, M: Merger> {
     merger: M,
 }
 
-impl<W: Write + Seek, M: Merger> SstBufferedWriter<W, M> {
+impl<W: Writable, M: Merger> SstBufferedWriter<W, M> {
     /// Creates a new buffered writer for the give file
     pub fn new(writer: W, merger: M) -> std::io::Result<Self> {
         let inner = SstWriter::new(writer)?;
@@ -44,7 +45,7 @@ impl<W: Write + Seek, M: Merger> SstBufferedWriter<W, M> {
 
     /// Let the writer know that we're done with the all the records and to write everything
     /// out to storage
-    pub fn finish(mut self) -> std::io::Result<W> {
+    pub fn finish(mut self) -> std::io::Result<SstInfo> {
         // Sort the pointers
         let buffer = &self.bytes_buffer;
         self.pointers
@@ -84,15 +85,19 @@ mod tests {
     #[test]
     fn test_sst_writer() -> Result<(), Box<dyn Error>> {
         let merger = NoopMerger {};
-        let mut sst_writer = SstBufferedWriter::new(Cursor::new(vec![]), merger)?;
+        let mut output = Cursor::new(vec![]);
+        let mut sst_writer = SstBufferedWriter::new(&mut output, merger)?;
         // We're testing that we can write out of order but when we read the file everything is
         // sorted
         sst_writer.push_record((b"c".as_ref(), b"2".as_ref()))?;
         sst_writer.push_record((b"a".as_ref(), b"1".as_ref()))?;
         sst_writer.push_record((b"e".as_ref(), b"3".as_ref()))?;
-        let output = sst_writer.finish()?.into_inner();
+        let sst_info = sst_writer.finish()?;
 
-        let mut reader = SstReader::new(output);
+        let mut reader = SstReader::new(output.into_inner());
+
+        assert_eq!(sst_info.min_record.as_ref(), b"a".as_ref());
+        assert_eq!(sst_info.max_record.as_ref(), b"e".as_ref());
 
         reader.seek(b"");
         assert_eq!(reader.get(), Some((b"a".as_ref(), b"1".as_ref())));
