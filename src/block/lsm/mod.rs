@@ -4,23 +4,12 @@ use crate::block::file_store::FileStore;
 /// A snapshot is a point in time copy of the state of the database, this is basically just a
 /// collection of tables, each table being its own lsm tree.
 /// A filestore is really the global access to the underlying files, with the memory mappings cached.
-use crate::block::lsm::level::{LsmLevel, LsmLevelIter};
-use crate::block::sst::SstInfo;
+use crate::block::lsm::level::LsmLevelIter;
+use crate::snapshot::TableSnapshot;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 pub mod level;
-
-/// Abstraction for the lsm
-pub struct LsmTree {
-    pub levels: Vec<LsmLevel>,
-}
-
-/// Sst info coupled with filename
-pub struct NamedSst {
-    pub identifier: String,
-    pub info: SstInfo,
-}
 
 /// A Lsm Style iterator that works at the tree level of an lsm.
 /// The idea here is that this iterator is dumb and doesn't know about merge records or delete
@@ -63,7 +52,7 @@ impl PartialOrd for Next {
 
 impl<'a, F: FileStore> LsmIter<'a, F> {
     /// Creates a new iter
-    pub fn new(tree: &'a LsmTree, file_store: &'a F) -> Self {
+    pub fn new(tree: &'a TableSnapshot, file_store: &'a F) -> Self {
         LsmIter {
             levels: tree
                 .levels
@@ -124,6 +113,8 @@ mod tests {
     use super::*;
     use crate::block::file_store::memory_file_store::MemoryFileStore;
     use crate::block::sst::sst_writer::SstWriter;
+    use crate::snapshot::{LsmLevelSnapshot, NamedSst};
+    use std::sync::Arc;
 
     #[test]
     fn test_lsm_iter() -> std::io::Result<()> {
@@ -143,20 +134,20 @@ mod tests {
         writer2.push_record(b"g", b"2")?;
         let sst2 = writer2.finish()?;
 
-        let lsm_tree = LsmTree {
+        let lsm_tree = TableSnapshot {
             levels: vec![
-                LsmLevel {
-                    ssts: vec![NamedSst {
+                Arc::new(LsmLevelSnapshot {
+                    ssts: vec![Arc::new(NamedSst {
                         identifier: "01".to_string(),
                         info: sst1,
-                    }],
-                },
-                LsmLevel {
-                    ssts: vec![NamedSst {
+                    })],
+                }),
+                Arc::new(LsmLevelSnapshot {
+                    ssts: vec![Arc::new(NamedSst {
                         identifier: "02".to_string(),
                         info: sst2,
-                    }],
-                },
+                    })],
+                }),
             ],
         };
 

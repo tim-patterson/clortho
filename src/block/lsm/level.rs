@@ -1,23 +1,18 @@
 use crate::block::file_store::FileStore;
-use crate::block::lsm::NamedSst;
 use crate::block::sst::sst_reader::SstReader;
+use crate::snapshot::LsmLevelSnapshot;
 use std::cmp::Ordering;
-
-/// A single level of the lsm
-pub struct LsmLevel {
-    pub ssts: Vec<NamedSst>,
-}
 
 /// A lsm style iterator that works across a single lsm level
 pub struct LsmLevelIter<'a, F: FileStore> {
-    level: &'a LsmLevel,
+    level: &'a LsmLevelSnapshot,
     file_store: &'a F,
     current_sst: Option<(SstReader<F::R>, usize)>,
 }
 
 impl<'a, F: FileStore> LsmLevelIter<'a, F> {
     /// Creates a new iter
-    pub fn new(level: &'a LsmLevel, file_store: &'a F) -> Self {
+    pub fn new(level: &'a LsmLevelSnapshot, file_store: &'a F) -> Self {
         LsmLevelIter {
             level,
             file_store,
@@ -83,6 +78,8 @@ mod tests {
     use super::*;
     use crate::block::file_store::memory_file_store::MemoryFileStore;
     use crate::block::sst::sst_writer::SstWriter;
+    use crate::snapshot::NamedSst;
+    use std::sync::Arc;
 
     #[test]
     fn test_lsm_level_iter() -> std::io::Result<()> {
@@ -101,16 +98,16 @@ mod tests {
         writer2.push_record(b"f", b"6")?;
         let sst2 = writer2.finish()?;
 
-        let lsm_level = LsmLevel {
+        let lsm_level = LsmLevelSnapshot {
             ssts: vec![
-                NamedSst {
+                Arc::new(NamedSst {
                     identifier: "01".to_string(),
                     info: sst1,
-                },
-                NamedSst {
+                }),
+                Arc::new(NamedSst {
                     identifier: "02".to_string(),
                     info: sst2,
-                },
+                }),
             ],
         };
 
@@ -155,11 +152,11 @@ mod tests {
         writer1.push_record(b"c", b"3")?;
         let sst1 = writer1.finish()?;
 
-        let lsm_level = LsmLevel {
-            ssts: vec![NamedSst {
+        let lsm_level = LsmLevelSnapshot {
+            ssts: vec![Arc::new(NamedSst {
                 identifier: "01".to_string(),
                 info: sst1,
-            }],
+            })],
         };
 
         let mut lsm_iter = LsmLevelIter::new(&lsm_level, &file_store);

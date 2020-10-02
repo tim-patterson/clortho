@@ -18,7 +18,7 @@ wildcards = "allow"
 
 [licenses]
 unlicensed = "deny"
-allow = []
+allow = ["MIT"]
 deny = []
 copyleft = "warn"
 allow-osi-fsf-free = "neither"
