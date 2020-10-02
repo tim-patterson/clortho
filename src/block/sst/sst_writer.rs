@@ -1,8 +1,8 @@
-use crate::file_store::Writable;
-use crate::sst::SstInfo;
+use crate::block::file_store::Writable;
+use crate::block::sst::SstInfo;
+use crate::utils::varint::write_varint_unsigned;
 use std::cmp::min;
 use std::io::SeekFrom;
-use utils::varint::write_varint_unsigned;
 
 // We're making the sst writer push based rather than pull(iterator) based under the assumption
 // that this will allow more flexibility in the higher layers rather than forcing everything above

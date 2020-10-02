@@ -1,4 +1,4 @@
-use utils::streaming_iter::StreamingKVIter;
+use crate::utils::streaming_iter::StreamingKVIter;
 
 /// Trait to be implemented for merging multiple records together, this is used to remove duplicates
 /// when appending data into a block, when reading data from multiple files and for compactions.

@@ -1,8 +1,8 @@
+use crate::utils::varint::read_varint_unsigned;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 use std::ops::Deref;
-use utils::varint::read_varint_unsigned;
 
 /// Reader that can read an sst file
 /// See https://github.com/tim-patterson/clortho/blob/master/docs/FILE_FORMAT.md
@@ -168,7 +168,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sst::sst_writer::SstWriter;
+    use crate::block::sst::sst_writer::SstWriter;
     use std::error::Error;
     use std::io::Cursor;
 

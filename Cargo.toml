@@ -5,9 +5,6 @@ authors = ["Tim Patterson <tim.wanaka@gmail.com>"]
 edition = "2018"
 publish = false
 
-[workspace]
-members = [
-    "src/block",
-    "src/utils",
-]
 
+[dependencies]
+memmap = "0.7.0"

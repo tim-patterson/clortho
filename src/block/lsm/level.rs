@@ -1,6 +1,6 @@
-use crate::file_store::FileStore;
-use crate::lsm::NamedSst;
-use crate::sst::sst_reader::SstReader;
+use crate::block::file_store::FileStore;
+use crate::block::lsm::NamedSst;
+use crate::block::sst::sst_reader::SstReader;
 use std::cmp::Ordering;
 
 /// A single level of the lsm
@@ -81,8 +81,8 @@ impl<'a, F: FileStore> LsmLevelIter<'a, F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file_store::memory_file_store::MemoryFileStore;
-    use crate::sst::sst_writer::SstWriter;
+    use crate::block::file_store::memory_file_store::MemoryFileStore;
+    use crate::block::sst::sst_writer::SstWriter;
 
     #[test]
     fn test_lsm_level_iter() -> std::io::Result<()> {

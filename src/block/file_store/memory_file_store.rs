@@ -1,4 +1,4 @@
-use crate::file_store::{FileStore, Writable};
+use super::{FileStore, Writable};
 use std::collections::HashMap;
 use std::io::{Cursor, ErrorKind, Seek, SeekFrom, Write};
 use std::sync::{Arc, RwLock};

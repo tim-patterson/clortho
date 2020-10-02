@@ -1,9 +1,9 @@
-use crate::file_store::Writable;
-use crate::merge::Merger;
-use crate::sst::sst_writer::SstWriter;
-use crate::sst::SstInfo;
-use crate::KVWritable;
-use utils::streaming_iter;
+use crate::block::file_store::Writable;
+use crate::block::merge::Merger;
+use crate::block::sst::sst_writer::SstWriter;
+use crate::block::sst::SstInfo;
+use crate::block::KVWritable;
+use crate::utils::streaming_iter;
 
 /// A Wrapper around the raw sst writer that allows us to write the data out
 /// in any order we want, simply buffering and then sorting when finishing,
@@ -77,8 +77,8 @@ impl<W: Writable, M: Merger> SstBufferedWriter<W, M> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::merge::NoopMerger;
-    use crate::sst::sst_reader::SstReader;
+    use crate::block::merge::NoopMerger;
+    use crate::block::sst::sst_reader::SstReader;
     use std::error::Error;
     use std::io::Cursor;
 

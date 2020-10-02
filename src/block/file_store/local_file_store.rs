@@ -1,4 +1,4 @@
-use crate::file_store::{FileStore, Writable};
+use super::{FileStore, Writable};
 use memmap::Mmap;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};

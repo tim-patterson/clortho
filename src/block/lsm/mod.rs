@@ -1,11 +1,11 @@
-use crate::file_store::FileStore;
+use crate::block::file_store::FileStore;
 /// Lsm tree, when thinking about how the whole kv store ties together at the top we have
 /// snapshots and filestores,
 /// A snapshot is a point in time copy of the state of the database, this is basically just a
 /// collection of tables, each table being its own lsm tree.
 /// A filestore is really the global access to the underlying files, with the memory mappings cached.
-use crate::lsm::level::{LsmLevel, LsmLevelIter};
-use crate::sst::SstInfo;
+use crate::block::lsm::level::{LsmLevel, LsmLevelIter};
+use crate::block::sst::SstInfo;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
@@ -122,8 +122,8 @@ impl<'a, F: FileStore> LsmIter<'a, F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file_store::memory_file_store::MemoryFileStore;
-    use crate::sst::sst_writer::SstWriter;
+    use crate::block::file_store::memory_file_store::MemoryFileStore;
+    use crate::block::sst::sst_writer::SstWriter;
 
     #[test]
     fn test_lsm_iter() -> std::io::Result<()> {
